@@ -6,7 +6,7 @@
   the Free Software Foundation, either version 2 of the License, or
   (at your option) any later version.
   
-  Copyright 2010 Marius Kintel <marius@kintel.net>
+  Copyright 2010-2011 Marius Kintel <marius@kintel.net>
 
   Arduino simulator connector:
   1 - GND Black
@@ -21,97 +21,92 @@
 
 #include <Wire.h>
 
-//#define USE_IR_SENSORS
+#define USE_IR_SENSORS
+
+#define SENSOR_LEVEL_1 20
+#define SENSOR_LEVEL_2 40
+#define SENSOR_LEVEL_3 60
+#define SENSOR_LEVEL_4 80
+#define SENSOR_LEVEL_5 100
+#define PROXIMITY_ALERT_THRESHOLD SENSOR_LEVEL_5
 
 // Valve & LED mapping
-#define MILK_VALVES   VALVE(0) | VALVE(1)
-#define VODKA_VALVES  VALVE(2)
-#define KAHLUA_VALVES VALVE(3)
-#define RED_LED_VALVE VALVE(5)
-#define GREEN_LED_VALVE  VALVE(6)
-#define CUP_LED_VALVE VALVE(7)
+#define JUICE_VALVE       VALVE(0)
+#define VODKA_VALVE       VALVE(1)
+#define HEART_LED_VALVE   VALVE(2)
+#define BLUE_LED_1_VALVE  VALVE(3)
+#define BLUE_LED_2_VALVE  VALVE(4)
+#define WHITE_LED_1_VALVE VALVE(5)
+#define WHITE_LED_2_VALVE VALVE(6)
+#define RED_LED_VALVE     VALVE(7)
 
 // Sensor mapping
-#define IR_SENSOR_1          5
-#define IR_SENSOR_2          4
-#define IR_SENSOR_3          6
-#define IR_SENSOR_4          7
-#define VODKA_BUTTON_SENSOR  0
-#define KAHLUA_BUTTON_SENSOR 0
-#define MILK_BUTTON_SENSOR   1
+#define IR_SENSOR_1             0
+#define IR_SENSOR_2             1
+#define DISPENSER_BUTTON_SENSOR 2
+#define RESET_BUTTON_SENSOR     3
 
 // Timers in milliseconds
 // Roboexotica opening timing
-#define MILK_TIME 15000
+#define JUICE_TIME 15000
 #define VODKA_TIME 15000
-#define KAHLUA_TIME 15000
 // New accufuser timing
-// #define MILK_TIME 6000
+// #define JUICE_TIME 6000
 // #define VODKA_TIME 6000
-// #define KAHLUA_TIME 6000
 
-#define RED_LED_ON_TIME  100
-#define RED_LED_OFF_TIME 900
-#define GREEN_LED_ON_TIME  100
-#define GREEN_LED_OFF_TIME 900
-#define CUP_LED_ON_TIME  100
-#define CUP_LED_OFF_TIME 500
-#define SHUTDOWN_TIME 120000
-
-#define PROXIMITY_THRESHOLD       30
-#define PROXIMITY_ALERT_THRESHOLD 80
+#define RED_LED_ON_TIME  50
+#define RED_LED_OFF_TIME 50
+#define HEART_LED_ON_TIME  100
+#define HEART_LED_OFF_TIME 500
 
 #define BUTTON_MAX 10
 #define PROXIMITY_MAX 500
 
-byte system_state = 0;
 enum SystemState {
   STATE_OFF,
   STATE_ACTIVE,
-  STATE_RUNNING,
-  STATE_SHUTDOWN
+  STATE_DARE,
+  STATE_FREEZE
 };
+byte system_state = STATE_OFF;
+byte previous_state = STATE_OFF;
 
 byte production_state = 0;
-#define PRODUCING_MILK   0x01
-#define PRODUCED_MILK    0x02
+#define PRODUCING_JUICE   0x01
+#define PRODUCED_JUICE    0x02
 #define PRODUCING_VODKA  0x04
 #define PRODUCED_VODKA   0x08
-#define PRODUCING_KAHLUA 0x10
-#define PRODUCED_KAHLUA  0x20
 
 byte drinks_produced = 0;
 
 byte events = 0;
-#define MILK_BUTTON_EVENT   0x01
-#define VODKA_BUTTON_EVENT  0x02
-#define KAHLUA_BUTTON_EVENT 0x04
-#define PROXIMITY_EVENT     0x08
-#define PROXIMITY_ALERT     0x10
+#define DISPENSER_BUTTON_DOWN    0x01
+#define DISPENSER_BUTTON_CLICKED 0x02
+#define RESET_BUTTON_DOWN        0x04
+#define RESET_BUTTON_CLICKED     0x08
+#define PROXIMITY_ALERT          0x10
 
 unsigned long currtime;
 enum {
-  MILK_TIMEOUT = 0,
+  JUICE_TIMEOUT = 0,
   VODKA_TIMEOUT = 1,
-  KAHLUA_TIMEOUT = 2,
-  SHUTDOWN_TIMEOUT = 3,
   RED_LED_TIMEOUT = 4,
-  GREEN_LED_TIMEOUT = 5,
-  CUP_LED_TIMEOUT = 6
+  HEART_LED_TIMEOUT = 6
 };
 unsigned long timeouts[7] = {0,0,0,0,0,0,0};
 
-#define MILK_BUTTON_ID 0
-#define VODKA_BUTTON_ID 1
-#define KAHLUA_BUTTON_ID 2
-#define PROXIMITY_ID 3
-#define PROXIMITY_ALERT_ID 4
-uint16_t button_counters[5] = {0,0,0,0,0};
+#define DISPENSER_BUTTON_ID 0
+#define RESET_BUTTON_ID 1
+#define PROXIMITY_ALERT_ID 2
+uint16_t button_counters[3] = {0,0,0};
 
 enum LedIds {
+  HEART_LED,
+  BLUE_LED_1,
+  BLUE_LED_2,
+  WHITE_LED_1,
+  WHITE_LED_2,
   RED_LED,
-  GREEN_LED,
-  CUP_LED
 };
 enum LedStates {
   LED_OFF,
@@ -119,7 +114,9 @@ enum LedStates {
   LED_BLINK_OFF,
   LED_BLINK_ON
 };
-byte led_states[3] = {LED_OFF, LED_OFF, LED_OFF};
+byte led_states[6] = {LED_OFF, LED_OFF, LED_OFF, LED_OFF, LED_OFF, LED_OFF};
+
+byte current_proximity = 0;
 
 /*!
   Sets LED state and initialized timeouts for blinking.
@@ -127,19 +124,66 @@ byte led_states[3] = {LED_OFF, LED_OFF, LED_OFF};
  */
 void set_LED_state(byte led, byte state)
 {
-  led_states[led] = state;
-  if (state == LED_BLINK_OFF || state == LED_BLINK_ON) {
-    switch (led) {
-    case RED_LED:
-      timeouts[RED_LED_TIMEOUT] = millis() + RED_LED_ON_TIME;
-      break;
-    case GREEN_LED:
-      timeouts[GREEN_LED_TIMEOUT] = millis() + GREEN_LED_ON_TIME;
-      break;
-    case CUP_LED:
-      timeouts[CUP_LED_TIMEOUT] = millis() + CUP_LED_ON_TIME;
-      break;
-    }
+  if (led_states[led] != state) {
+    led_states[led] = state;
+// #ifdef SIMULATOR
+//     Serial.print("LED ");
+//     Serial.print(led, DEC);
+//     Serial.print(": ");
+//     Serial.println(state, DEC);
+// #endif  
+  }
+  // if (state == LED_BLINK_OFF || state == LED_BLINK_ON) {
+  //   switch (led) {
+  //   case RED_LED:
+  //     timeouts[RED_LED_TIMEOUT] = millis() + RED_LED_ON_TIME;
+  //     break;
+  //   case HEART_LED:
+  //     timeouts[HEART_LED_TIMEOUT] = millis() + HEART_LED_ON_TIME;
+  //     break;
+  //   }
+  // }
+}
+
+void activateLED(int led, bool on)
+{
+  switch (led) {
+  case HEART_LED:
+    set_valves(HEART_LED_VALVE, on);
+#ifdef DEBUG    
+    Serial.print("RED_LED "); Serial.println(on, DEC);
+#endif
+    break;
+  case BLUE_LED_1:
+    set_valves(BLUE_LED_1_VALVE, on);
+#ifdef DEBUG    
+    Serial.print("BLUE_LED_1 "); Serial.println(on, DEC);
+#endif
+    break;
+  case BLUE_LED_2:
+    set_valves(BLUE_LED_2_VALVE, on);
+#ifdef DEBUG    
+    Serial.print("BLUE_LED_2 "); Serial.println(on, DEC);
+#endif
+    break;
+  case WHITE_LED_1:
+    set_valves(WHITE_LED_1_VALVE, on);
+#ifdef DEBUG    
+    Serial.print("WHITE_LED_1 "); Serial.println(on, DEC);
+#endif
+    break;
+  case WHITE_LED_2:
+    set_valves(WHITE_LED_2_VALVE, on);
+#ifdef DEBUG    
+    Serial.print("WHITE_LED_2 "); Serial.println(on, DEC);
+#endif
+    break;
+  case RED_LED:
+    set_valves(RED_LED_VALVE, on);
+#ifdef DEBUG    
+    Serial.print("RED_LED "); Serial.println(on, DEC);
+#endif
+    break;
   }
 }
 
@@ -151,94 +195,84 @@ void handle_leds()
   switch (led_states[RED_LED]) {
   case LED_OFF:
   case LED_BLINK_OFF:
-    close_valves(RED_LED_VALVE);
+    activateLED(RED_LED_VALVE, false);
     break;
   case LED_ON:
   case LED_BLINK_ON:
-    open_valves(RED_LED_VALVE);
+    activateLED(RED_LED_VALVE, true);
     break;
   }
 
-  switch (led_states[GREEN_LED]) {
-  case LED_OFF:
-  case LED_BLINK_OFF:
-    close_valves(GREEN_LED_VALVE);
-    break;
-  case LED_ON:
-  case LED_BLINK_ON:
-    open_valves(GREEN_LED_VALVE);
-    break;
-  }
-
-  switch (led_states[CUP_LED]) {
-  case LED_OFF:
-  case LED_BLINK_OFF:
-    close_valves(CUP_LED_VALVE);
-    break;
-  case LED_ON:
-  case LED_BLINK_ON:
-    open_valves(CUP_LED_VALVE);
-    break;
-  }
+  // switch (led_states[HEART_LED]) {
+  // case LED_OFF:
+  // case LED_BLINK_OFF:
+  //   activateLED(HEART_LED_VALVE, false);
+  //   break;
+  // case LED_ON:
+  // case LED_BLINK_ON:
+  //   activateLED(HEART_LED_VALVE, true);
+  //   break;
+  // }
 }
 
 enum Substance {
-  MILK,
+  JUICE,
   VODKA,
-  KAHLUA
 };
 
 /*!
-  Start producing a substance -> turn on valves, start timers, update CUP LED
+  Start producing a substance -> turn on valves, start timers, update HEART LED
 */
 void start_production(byte substance)
 {
   switch (substance) {
-  case MILK:
-    open_valves(MILK_VALVES);
-    timeouts[MILK_TIMEOUT] = millis() + MILK_TIME;
-    production_state |= PRODUCING_MILK;
+  case JUICE:
+    open_valves(JUICE_VALVE);
+#ifdef DEBUG
+    Serial.println("JUICE 1");
+#endif
+    timeouts[JUICE_TIMEOUT] = millis() + JUICE_TIME;
+    production_state |= PRODUCING_JUICE;
     break;
   case VODKA:
-    open_valves(VODKA_VALVES);
+    open_valves(VODKA_VALVE);
+#ifdef DEBUG
+    Serial.println("VODKA 1");
+#endif
     timeouts[VODKA_TIMEOUT] = millis() + VODKA_TIME;
     production_state |= PRODUCING_VODKA;
     break;
-  case KAHLUA:
-    open_valves(KAHLUA_VALVES);
-    timeouts[KAHLUA_TIMEOUT] = millis() + KAHLUA_TIME;
-    production_state |= PRODUCING_KAHLUA;
-    break;
   }
-  set_LED_state(CUP_LED, LED_BLINK_OFF);
+  set_LED_state(HEART_LED, LED_BLINK_OFF);
 }
 
 /*!
-  Stop producing a substance -> turn off valves, update CUP LED
+  Stop producing a substance -> turn off valves, update HEART LED
 */
 void stop_production(byte substance)
 {
   switch (substance) {
-  case MILK:
-    close_valves(MILK_VALVES);
-    production_state |= PRODUCED_MILK;
-    production_state &= ~PRODUCING_MILK;
+  case JUICE:
+    close_valves(JUICE_VALVE);
+#ifdef DEBUG
+    Serial.println("JUICE 0");
+#endif
+    production_state |= PRODUCED_JUICE;
+    production_state &= ~PRODUCING_JUICE;
     break;
   case VODKA:
-    close_valves(VODKA_VALVES);
+    close_valves(VODKA_VALVE);
+#ifdef DEBUG
+    Serial.println("VODKA 0");
+#endif
     production_state |= PRODUCED_VODKA;
     production_state &= ~PRODUCING_VODKA;
-    break;
-  case KAHLUA:
-    close_valves(KAHLUA_VALVES);
-    production_state |= PRODUCED_KAHLUA;
-    production_state &= ~PRODUCING_KAHLUA;
     break;
   }
 
   // If nothing is currently producing, turn off cup LED
-  if (!(production_state & (PRODUCING_MILK | PRODUCING_VODKA | PRODUCING_KAHLUA))) {
-    set_LED_state(CUP_LED, LED_OFF);
+  if (!(production_state & (PRODUCING_JUICE | PRODUCING_VODKA))) {
+    set_LED_state(HEART_LED, LED_OFF);
   }
 }
 
@@ -250,7 +284,7 @@ void handle_timers()
   currtime = millis();
 
   // Handle blinking LEDs
-
+#if 0
   if (led_states[RED_LED] == LED_BLINK_ON &&
       currtime > timeouts[RED_LED_TIMEOUT]) {
     set_LED_state(RED_LED, LED_BLINK_OFF);
@@ -272,40 +306,37 @@ void handle_timers()
     set_LED_state(GREEN_LED, LED_BLINK_ON);
     timeouts[GREEN_LED_TIMEOUT] = currtime + GREEN_LED_ON_TIME;
   }
+#endif
 
-  if (led_states[CUP_LED] == LED_BLINK_ON &&
-      currtime > timeouts[CUP_LED_TIMEOUT]) {
-    set_LED_state(CUP_LED, LED_BLINK_OFF);
-    timeouts[CUP_LED_TIMEOUT] = currtime + CUP_LED_OFF_TIME;
+  if (led_states[HEART_LED] == LED_BLINK_ON &&
+      currtime > timeouts[HEART_LED_TIMEOUT]) {
+    set_LED_state(HEART_LED, LED_BLINK_OFF);
+    timeouts[HEART_LED_TIMEOUT] = currtime + HEART_LED_OFF_TIME;
   }
-  else if (led_states[CUP_LED] == LED_BLINK_OFF &&
-      currtime > timeouts[CUP_LED_TIMEOUT]) {
-    set_LED_state(CUP_LED, LED_BLINK_ON);
-    timeouts[CUP_LED_TIMEOUT] = currtime + CUP_LED_ON_TIME;
+  else if (led_states[HEART_LED] == LED_BLINK_OFF &&
+      currtime > timeouts[HEART_LED_TIMEOUT]) {
+    set_LED_state(HEART_LED, LED_BLINK_ON);
+    timeouts[HEART_LED_TIMEOUT] = currtime + HEART_LED_ON_TIME;
   }
   
   // Handle valve timers
 
-  if ((production_state & PRODUCING_MILK) &&
-      (currtime > timeouts[MILK_TIMEOUT])) {
-    stop_production(MILK); 
+  if ((production_state & PRODUCING_JUICE) &&
+      (currtime > timeouts[JUICE_TIMEOUT])) {
+    stop_production(JUICE); 
   }
   if ((production_state & PRODUCING_VODKA) &&
       (currtime > timeouts[VODKA_TIMEOUT])) {
     stop_production(VODKA); 
   }
-  if ((production_state & PRODUCING_KAHLUA) &&
-      (currtime > timeouts[KAHLUA_TIMEOUT])) {
-    stop_production(KAHLUA); 
-  }
 
-  // Shutdown timer
-  // FIXME: No shutdown for now
-  // if ((system_state == STATE_SHUTDOWN) &&
-  //     (currtime > timeouts[SHUTDOWN_TIMEOUT])) {
+  // Freeze timer
+  // FIXME: No freeze for now
+  // if ((system_state == STATE_FREEZE) &&
+  //     (currtime > timeouts[FREEZE_TIMEOUT])) {
   //   set_state(STATE_OFF);
   // }  
-  // if ((system_state == STATE_SHUTDOWN) &&
+  // if ((system_state == STATE_FREEZE) &&
   //     (events & PAD_EVENT)) {
   //   set_state(STATE_OFF);
   // }
@@ -316,26 +347,25 @@ void handle_timers()
  */
 void set_state(byte newstate)
 {
+  if (system_state != newstate) {
+#ifdef DEBUG
+    Serial.print("State "); Serial.println(newstate, DEC);
+#endif
+  }
   switch (newstate) {
   case STATE_OFF:
+    close_valves(ALL_VALVES);
     production_state = 0;
-    set_LED_state(RED_LED, LED_BLINK_ON);
-    set_LED_state(GREEN_LED, LED_BLINK_ON);
-    set_LED_state(CUP_LED, LED_OFF);
-    button_counters[MILK_BUTTON_ID] = button_counters[VODKA_BUTTON_ID] = button_counters[KAHLUA_BUTTON_ID] = 0;
+    button_counters[DISPENSER_BUTTON_ID] = button_counters[RESET_BUTTON_ID] = 0;
     break;
   case STATE_ACTIVE:
-    set_LED_state(RED_LED, LED_BLINK_ON);
-    set_LED_state(GREEN_LED, LED_BLINK_ON);
-    set_LED_state(CUP_LED, LED_OFF);
+    // set_LED_state(RED_LED, LED_BLINK_ON);
+    // set_LED_state(CUP_LED, LED_OFF);
     break;
-  case STATE_RUNNING:
+  case STATE_DARE:
     break;
-  case STATE_SHUTDOWN:
+  case STATE_FREEZE:
     set_LED_state(RED_LED, LED_BLINK_OFF);
-    set_LED_state(GREEN_LED, LED_OFF);
-    set_LED_state(CUP_LED, LED_OFF);
-    timeouts[SHUTDOWN_TIMEOUT] = millis() + SHUTDOWN_TIME;
     break;
   }
   system_state = newstate;
@@ -350,27 +380,21 @@ void handle_inputs()
 
 #ifdef USE_IR_SENSORS
   // Find closest object
-  byte max_ir_value = max(get_last_sensor_value(IR_SENSOR_1), get_last_sensor_value(IR_SENSOR_2));
-  max_ir_value = max(max_ir_value, get_last_sensor_value(IR_SENSOR_3));
-  max_ir_value = max(max_ir_value, get_last_sensor_value(IR_SENSOR_4));
+  current_proximity = max(get_last_sensor_value(IR_SENSOR_1), 
+                          get_last_sensor_value(IR_SENSOR_2));
+  set_LED_state(BLUE_LED_1, (current_proximity > SENSOR_LEVEL_1) ? LED_ON : LED_OFF);
+  set_LED_state(BLUE_LED_2, (current_proximity > SENSOR_LEVEL_2) ? LED_ON : LED_OFF);
+  set_LED_state(WHITE_LED_1, (current_proximity > SENSOR_LEVEL_3) ? LED_ON : LED_OFF);
+  set_LED_state(WHITE_LED_2, (current_proximity > SENSOR_LEVEL_4) ? LED_ON : LED_OFF);
+  set_LED_state(RED_LED, (current_proximity > SENSOR_LEVEL_5) ? LED_ON : LED_OFF);
 
-  if (max_ir_value > PROXIMITY_ALERT_THRESHOLD) {
-    events |= PROXIMITY_ALERT;
-    events &= ~PROXIMITY_EVENT;
-  }
-  else if (max_ir_value > PROXIMITY_THRESHOLD) {
-    events |= PROXIMITY_EVENT;
-    events &= ~PROXIMITY_ALERT;
-  }
-
-  // Debounce sensor reading
-  if (max_ir_value > PROXIMITY_ALERT_THRESHOLD) {
+  // "Debounce" sensor reading
+  if (current_proximity > PROXIMITY_ALERT_THRESHOLD) {
     if (button_counters[PROXIMITY_ALERT_ID] < PROXIMITY_MAX) {
       button_counters[PROXIMITY_ALERT_ID]++;
     }
     if (button_counters[PROXIMITY_ALERT_ID] == PROXIMITY_MAX) {
       events |= PROXIMITY_ALERT;
-      events &= ~PROXIMITY_EVENT;
     }
   }
   else {
@@ -380,82 +404,64 @@ void handle_inputs()
     if (button_counters[PROXIMITY_ALERT_ID] == 0) {
       events &= ~PROXIMITY_ALERT;
     }
-
-    if (max_ir_value > PROXIMITY_THRESHOLD) {
-      if (button_counters[PROXIMITY_ID] < PROXIMITY_MAX) {
-        button_counters[PROXIMITY_ID]++;
-      }
-      if (button_counters[PROXIMITY_ID] == PROXIMITY_MAX) {
-        events |= PROXIMITY_EVENT;
-      }
-    }
-    else {
-      if (button_counters[PROXIMITY_ID] > 0) {
-        button_counters[PROXIMITY_ID]--;
-      }
-      if (button_counters[PROXIMITY_ID] == 0) {
-        events &= ~PROXIMITY_EVENT;
-      }
-    }
   }
 #endif // USE_IR_SENSORS
 
-  // Debounce buttons and trigger button events
-  if (get_last_sensor_value(MILK_BUTTON_SENSOR) < 50) {
-    if (button_counters[MILK_BUTTON_ID] < BUTTON_MAX) {
-      button_counters[MILK_BUTTON_ID]++;
+
+  // Debounce buttons events
+
+  if (button_counters[DISPENSER_BUTTON_ID] == 0) events &= ~DISPENSER_BUTTON_CLICKED;
+  if (get_last_sensor_value(DISPENSER_BUTTON_SENSOR) < 50) {
+    if (button_counters[DISPENSER_BUTTON_ID] < BUTTON_MAX) {
+      button_counters[DISPENSER_BUTTON_ID]++;
     }
-    if (button_counters[MILK_BUTTON_ID] == BUTTON_MAX) {
-      events |= MILK_BUTTON_EVENT;
+    if (button_counters[DISPENSER_BUTTON_ID] == BUTTON_MAX) {
+      events |= DISPENSER_BUTTON_DOWN;
     }
   }
   else {
-    if (button_counters[MILK_BUTTON_ID] > 0) {
-      button_counters[MILK_BUTTON_ID]--;
+    if (button_counters[DISPENSER_BUTTON_ID] > 0) {
+      button_counters[DISPENSER_BUTTON_ID]--;
     }
-    if (button_counters[MILK_BUTTON_ID] == 0) {
-      events &= ~MILK_BUTTON_EVENT;
+    if (button_counters[DISPENSER_BUTTON_ID] == 0) {
+      if (events & DISPENSER_BUTTON_DOWN) {
+        events |= DISPENSER_BUTTON_CLICKED;
+#ifdef DEBUG
+        Serial.println("Button 1");
+#endif
+      }
+      events &= ~DISPENSER_BUTTON_DOWN;
     }
   }
 
-  if (get_last_sensor_value(VODKA_BUTTON_SENSOR) < 50) {
-    if (button_counters[VODKA_BUTTON_ID] < BUTTON_MAX) {
-      button_counters[VODKA_BUTTON_ID]++;
+  if (button_counters[RESET_BUTTON_ID] == 0) events &= ~RESET_BUTTON_CLICKED;
+  if (get_last_sensor_value(RESET_BUTTON_SENSOR) < 50) {
+    if (button_counters[RESET_BUTTON_ID] < BUTTON_MAX) {
+      button_counters[RESET_BUTTON_ID]++;
     }
-    if (button_counters[VODKA_BUTTON_ID] == BUTTON_MAX) {
-      events |= VODKA_BUTTON_EVENT;
-    }
-  }
-  else {
-    if (button_counters[VODKA_BUTTON_ID] > 0) {
-      button_counters[VODKA_BUTTON_ID]--;
-    }
-    if (button_counters[VODKA_BUTTON_ID] == 0) {
-      events &= ~VODKA_BUTTON_EVENT;
-    }
-  }
-
-  if (get_last_sensor_value(KAHLUA_BUTTON_SENSOR) < 50) {
-    if (button_counters[KAHLUA_BUTTON_ID] < BUTTON_MAX) {
-      button_counters[KAHLUA_BUTTON_ID]++;
-    }
-    if (button_counters[KAHLUA_BUTTON_ID] == BUTTON_MAX) {
-      events |= KAHLUA_BUTTON_EVENT;
+    if (button_counters[RESET_BUTTON_ID] == BUTTON_MAX) {
+      events |= RESET_BUTTON_DOWN;
     }
   }
   else {
-    if (button_counters[KAHLUA_BUTTON_ID] > 0) {
-      button_counters[KAHLUA_BUTTON_ID]--;
+    if (button_counters[RESET_BUTTON_ID] > 0) {
+      button_counters[RESET_BUTTON_ID]--;
     }
-    if (button_counters[KAHLUA_BUTTON_ID] == 0) {
-      events &= ~KAHLUA_BUTTON_EVENT;
+    if (button_counters[RESET_BUTTON_ID] == 0) {
+      if (events & RESET_BUTTON_DOWN) {
+        events |= RESET_BUTTON_CLICKED;
+#ifdef DEBUG
+        Serial.println("Reset 1");
+#endif
+      }
+      events &= ~RESET_BUTTON_DOWN;
     }
   }
 
   // FIXME: Workaround for missing IR sensors, use same button for milk, 
   // but don't activate booze while milk is running
 #ifndef USE_IR_SENSORS
-  if (events & MILK_BUTTON_EVENT) {
+  if (events & DISPENSER_BUTTON_EVENT) {
     events |= PROXIMITY_EVENT;
   }
   else {
@@ -467,7 +473,7 @@ void handle_inputs()
 void setup()
 {
   Serial.begin(57600);
-  Serial.println("Boozebabe!");
+  Serial.println("DareDroid!");
 
   // Turn off board status LEDs
   pinMode(LED1, OUTPUT);
@@ -480,16 +486,22 @@ void setup()
   
   bool valves_ok = init_valves();
   bool sensors_ok = init_sensors();
-  close_all_valves();
+  close_valves(ALL_VALVES);
 
   // Briefly pulse LEDs to indicate sensor status
   if (valves_ok) IO_PORT |= (_BV(LS1));
+#ifdef DEBUG
+  else Serial.println("init_valves() failed");
+#endif
   if (sensors_ok) IO_PORT |= (_BV(LS2));
+#ifdef DEBUG
+  else Serial.println("init_sensors() failed");
+#endif
   if (valves_ok && sensors_ok) {
     delay(800);
     IO_PORT &= ~(_BV(LS1) | _BV(LS2));
   } else {
-    Serial.println("Boozebabe init error");
+    Serial.println("DareDroid init error");
     // Loop while blinking LEDs on sensor error
     for (;;) {
       if (!valves_ok) IO_PORT |= (_BV(LS1));
@@ -499,12 +511,10 @@ void setup()
       delay(300);
     }
   }
-  Serial.println("Boozebabe ready");
+  Serial.println("DareDroid ready");
 
   // System will be deactivated initially
   set_state(STATE_OFF);
-  // FIXME: Workaround: Always in ON state
-  set_state(STATE_ACTIVE);
 }
 
 /*!
@@ -533,58 +543,42 @@ void loop()
   handle_leds();
   handle_timers();
 
+
+  //
+  // State management
+  //
+
   // Proximity alert overrides everything
-  if (events & PROXIMITY_ALERT) {
-    set_state(STATE_SHUTDOWN);
+  if ((events & PROXIMITY_ALERT) && (system_state != STATE_FREEZE)) {
+    previous_state = system_state;
+    set_state(STATE_FREEZE);
+  }
+  else if (system_state == STATE_FREEZE) {
+    set_state(previous_state);
   }
   else {
-    // If all has been produced, set back state to OFF
-    if ((production_state & (PRODUCED_MILK | PRODUCED_VODKA | PRODUCED_KAHLUA)) ==
-        (PRODUCED_MILK | PRODUCED_VODKA | PRODUCED_KAHLUA)) {
-      //      set_state(STATE_OFF);
-      // FIXME: Workaround: always on
-      set_state(STATE_OFF);
+    if (events & RESET_BUTTON_CLICKED) {
+      if (system_state == STATE_OFF) set_state(STATE_ACTIVE);
+      else set_state(STATE_OFF);
+    }
+
+    // If all has been produced, set back state to ACTIVE
+    if ((production_state & (PRODUCED_JUICE | PRODUCED_VODKA)) ==
+        (PRODUCED_JUICE | PRODUCED_VODKA)) {
       set_state(STATE_ACTIVE);
       drinks_produced++;
     }
-    // FIXME: Workaround: Disable pad
-    // if (events & PAD_EVENT) {
-    //   if (system_state == STATE_OFF) set_state(STATE_ACTIVE);
-    //   else set_state(STATE_OFF);
-    // }
-    if (system_state == STATE_ACTIVE && (events & PROXIMITY_EVENT)) {
-      set_state(STATE_RUNNING);
-      start_production(MILK);
+    if (system_state == STATE_ACTIVE && (events & DISPENSER_BUTTON_CLICKED)) {
+      set_state(STATE_DARE);
+      start_production(JUICE);
     }
-    if (system_state == STATE_RUNNING && (events & VODKA_BUTTON_EVENT)) {
+    if (system_state == STATE_DARE && (events & DISPENSER_BUTTON_CLICKED)) {
       // Produce vodka if not already done
-
-      // FIXME: Workaround for missing IR sensors, use same button for milk, 
-      // but don't activate booze while milk is running
-#ifndef USE_IR_SENSORS
-      if (production_state & PRODUCED_MILK) {
-#endif
+      if (production_state & PRODUCED_JUICE) {
         if (!(production_state & (PRODUCING_VODKA | PRODUCED_VODKA))) {
           start_production(VODKA);
         }
-#ifndef USE_IR_SENSORS
       }
-#endif
-    }
-    if (system_state == STATE_RUNNING && (events & KAHLUA_BUTTON_EVENT)) {
-      // Produce vodka if not already done
-
-      // FIXME: Workaround for missing IR sensors, use same button for milk, 
-      // but don't activate booze while milk is running
-#ifndef USE_IR_SENSORS
-      if (production_state & PRODUCED_MILK) {
-#endif
-        if (!(production_state & (PRODUCING_KAHLUA | PRODUCED_KAHLUA))) {
-          start_production(KAHLUA);
-        }
-#ifndef USE_IR_SENSORS
-      }
-#endif
     }
   }
 }

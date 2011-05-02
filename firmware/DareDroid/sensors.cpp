@@ -22,8 +22,12 @@ bool init_sensors()
 {
   Wire.beginTransmission(PCF8591_ADDR);
   byte ret1 = Wire.endTransmission();
+#ifndef SIMULATOR
   Wire.beginTransmission(PCF8591_ADDR + 1);
   byte ret2 = Wire.endTransmission();
+#else
+  byte ret2 = 0;
+#endif
   return (ret1 == 0) && (ret2 == 0);
 }
 

@@ -64,21 +64,10 @@ bool init_valves()
 #endif
 }
 
-void open_valves(uint8_t mask)
+void set_valves(uint8_t mask, bool on)
 {
-  __valve_status |= mask;
-  send_valve_status(__valve_status);
-}
-
-void close_valves(uint8_t mask)
-{
-  __valve_status &= ~(mask);
-  send_valve_status(__valve_status);
-}
-
-void set_valves(uint8_t mask)
-{
-  __valve_status = mask;
+  if (on) __valve_status |= mask;
+  else __valve_status &= ~(mask);
   send_valve_status(__valve_status);
 }
 
