@@ -33,12 +33,6 @@
 // Valve & LED mapping
 #define JUICE_VALVE       VALVE(0)
 #define VODKA_VALVE       VALVE(1)
-#define HEART_LED_VALVE   VALVE(2)
-#define BLUE_LED_1_VALVE  VALVE(3)
-#define BLUE_LED_2_VALVE  VALVE(4)
-#define WHITE_LED_1_VALVE VALVE(5)
-#define WHITE_LED_2_VALVE VALVE(6)
-#define RED_LED_VALVE     VALVE(7)
 
 // Sensor mapping
 #define IR_SENSOR_1             0
@@ -56,8 +50,6 @@
 
 #define RED_LED_ON_TIME  50
 #define RED_LED_OFF_TIME 50
-#define HEART_LED_ON_TIME  100
-#define HEART_LED_OFF_TIME 500
 
 #define BUTTON_MAX 10
 #define PROXIMITY_MAX 500
@@ -90,23 +82,14 @@ unsigned long currtime;
 enum {
   JUICE_TIMEOUT = 0,
   VODKA_TIMEOUT = 1,
-  HEART_LED_TIMEOUT = 2
 };
-unsigned long timeouts[3] = {0,0,0};
+unsigned long timeouts[2] = {0,0};
 
 #define DISPENSER_BUTTON_ID 0
 #define RESET_BUTTON_ID 1
 #define PROXIMITY_ALERT_ID 2
 uint16_t button_counters[3] = {0,0,0};
 
-enum LedIds {
-  HEART_LED,
-  BLUE_LED_1,
-  BLUE_LED_2,
-  WHITE_LED_1,
-  WHITE_LED_2,
-  RED_LED,
-};
 enum LedStates {
   LED_OFF,
   LED_ON,
@@ -114,6 +97,41 @@ enum LedStates {
   LED_BLINK_ON
 };
 byte led_states[6] = {LED_OFF, LED_OFF, LED_OFF, LED_OFF, LED_OFF, LED_OFF};
+
+struct LEDState {
+  byte state;
+  byte valve;
+};
+
+enum LedIds {
+  HEART_LED   = 0,
+  BLUE_LED_1  = 1,
+  BLUE_LED_2  = 2,
+  WHITE_LED_1 = 3,
+  WHITE_LED_2 = 4,
+  RED_LED     = 5
+};
+
+#define NUMLEDS 6
+LEDState ledstates[NUMLEDS] = {
+  { LED_OFF, VALVE(4) }, // HEART_LED
+  { LED_OFF, VALVE(3) }, // BLUE_LED_1
+  { LED_OFF, VALVE(6) }, // BLUE_LED_2
+  { LED_OFF, VALVE(2) }, // WHITE_LED_1
+  { LED_OFF, VALVE(7) }, // WHITE_LED_2
+  { LED_OFF, VALVE(5) }  // RED_LED
+};
+
+#define NUMBLINKERS 1
+struct BlinkState {
+  unsigned long timeout;
+  uint16_t ontime;
+  uint16_t offtime;
+};
+
+BlinkState blinkstates[1] = {
+  {0, 100, 500} // HEART_LED
+};
 
 byte current_proximity = 0;
 
@@ -123,8 +141,8 @@ byte current_proximity = 0;
  */
 void set_LED_state(byte led, byte state)
 {
-  if (led_states[led] != state) {
-    led_states[led] = state;
+  if (ledstates[led].state != state) {
+    ledstates[led].state = state;
 // #ifdef SIMULATOR
 //     Serial.print("LED ");
 //     Serial.print(led, DEC);
@@ -135,7 +153,7 @@ void set_LED_state(byte led, byte state)
   if (state == LED_BLINK_OFF || state == LED_BLINK_ON) {
     switch (led) {
     case HEART_LED:
-      timeouts[HEART_LED_TIMEOUT] = millis() + HEART_LED_ON_TIME;
+      blinkstates[led].timeout = millis() + blinkstates[led].ontime;
       break;
     }
   }
@@ -143,44 +161,37 @@ void set_LED_state(byte led, byte state)
 
 void activateLED(int led, bool on)
 {
-  switch (led) {
-  case HEART_LED:
-    set_valves(HEART_LED_VALVE, on);
-#ifdef DEBUG    
-    Serial.print("RED_LED "); Serial.println(on, DEC);
-#endif
-    break;
-  case BLUE_LED_1:
-    set_valves(BLUE_LED_1_VALVE, on);
-#ifdef DEBUG    
-    Serial.print("BLUE_LED_1 "); Serial.println(on, DEC);
-#endif
-    break;
-  case BLUE_LED_2:
-    set_valves(BLUE_LED_2_VALVE, on);
-#ifdef DEBUG    
-    Serial.print("BLUE_LED_2 "); Serial.println(on, DEC);
-#endif
-    break;
-  case WHITE_LED_1:
-    set_valves(WHITE_LED_1_VALVE, on);
-#ifdef DEBUG    
-    Serial.print("WHITE_LED_1 "); Serial.println(on, DEC);
-#endif
-    break;
-  case WHITE_LED_2:
-    set_valves(WHITE_LED_2_VALVE, on);
-#ifdef DEBUG    
-    Serial.print("WHITE_LED_2 "); Serial.println(on, DEC);
-#endif
-    break;
-  case RED_LED:
-    set_valves(RED_LED_VALVE, on);
-#ifdef DEBUG    
-    Serial.print("RED_LED "); Serial.println(on, DEC);
-#endif
-    break;
+  byte valve = ledstates[led].valve;
+#ifdef DEBUG
+  if (get_valve(valve) != on) {
+    switch (led) {
+    case HEART_LED:
+      Serial.print("HEART_LED ");
+      break;
+    case BLUE_LED_1:
+      Serial.print("BLUE_LED_1 ");
+      break;
+    case BLUE_LED_2:
+      Serial.print("BLUE_LED_2 ");
+      break;
+    case WHITE_LED_1:
+      Serial.print("WHITE_LED_1 ");
+      break;
+    case WHITE_LED_2:
+      Serial.print("WHITE_LED_2 ");
+      break;
+    case RED_LED:
+      Serial.print("RED_LED ");
+      break;
+    }
+    // Serial.print(valve, HEX);
+    // Serial.print(" ");
+    // Serial.print(get_valve(valve), DEC);
+    Serial.println(on, DEC);
   }
+#endif
+
+  set_valves(valve, on);
 }
 
 /*!
@@ -188,26 +199,17 @@ void activateLED(int led, bool on)
 */
 void handle_leds()
 {
-  switch (led_states[HEART_LED]) {
-  case LED_OFF:
-  case LED_BLINK_OFF:
-    activateLED(HEART_LED_VALVE, false);
-    break;
-  case LED_ON:
-  case LED_BLINK_ON:
-    activateLED(HEART_LED_VALVE, true);
-    break;
-  }
-
-  switch (led_states[RED_LED]) {
-  case LED_OFF:
-  case LED_BLINK_OFF:
-    activateLED(RED_LED_VALVE, false);
-    break;
-  case LED_ON:
-  case LED_BLINK_ON:
-    activateLED(RED_LED_VALVE, true);
-    break;
+  for (byte i=0;i<NUMLEDS;i++) {
+    switch (ledstates[i].state) {
+    case LED_OFF:
+    case LED_BLINK_OFF:
+      activateLED(i, false);
+      break;
+    case LED_ON:
+    case LED_BLINK_ON:
+      activateLED(i, true);
+      break;
+    }
   }
 }
 
@@ -279,40 +281,16 @@ void handle_timers()
 {
   currtime = millis();
 
+  byte led = HEART_LED;
+
   // Handle blinking LEDs
-#if 0
-  if (led_states[RED_LED] == LED_BLINK_ON &&
-      currtime > timeouts[RED_LED_TIMEOUT]) {
-    set_LED_state(RED_LED, LED_BLINK_OFF);
-    timeouts[RED_LED_TIMEOUT] = currtime + RED_LED_OFF_TIME;
+  if (ledstates[led].state == LED_BLINK_ON && currtime > blinkstates[led].timeout) {
+    set_LED_state(led, LED_BLINK_OFF);
+    blinkstates[led].timeout = currtime + blinkstates[led].offtime;
   }
-  else if (led_states[RED_LED] == LED_BLINK_OFF &&
-      currtime > timeouts[RED_LED_TIMEOUT]) {
-    set_LED_state(RED_LED, LED_BLINK_ON);
-    timeouts[RED_LED_TIMEOUT] = currtime + RED_LED_ON_TIME;
-  }
-
-  if (led_states[GREEN_LED] == LED_BLINK_ON &&
-      currtime > timeouts[GREEN_LED_TIMEOUT]) {
-    set_LED_state(GREEN_LED, LED_BLINK_OFF);
-    timeouts[GREEN_LED_TIMEOUT] = currtime + GREEN_LED_OFF_TIME;
-  }
-  else if (led_states[GREEN_LED] == LED_BLINK_OFF &&
-      currtime > timeouts[GREEN_LED_TIMEOUT]) {
-    set_LED_state(GREEN_LED, LED_BLINK_ON);
-    timeouts[GREEN_LED_TIMEOUT] = currtime + GREEN_LED_ON_TIME;
-  }
-#endif
-
-  if (led_states[HEART_LED] == LED_BLINK_ON &&
-      currtime > timeouts[HEART_LED_TIMEOUT]) {
-    set_LED_state(HEART_LED, LED_BLINK_OFF);
-    timeouts[HEART_LED_TIMEOUT] = currtime + HEART_LED_OFF_TIME;
-  }
-  else if (led_states[HEART_LED] == LED_BLINK_OFF &&
-      currtime > timeouts[HEART_LED_TIMEOUT]) {
-    set_LED_state(HEART_LED, LED_BLINK_ON);
-    timeouts[HEART_LED_TIMEOUT] = currtime + HEART_LED_ON_TIME;
+  else if (ledstates[led].state == LED_BLINK_OFF && currtime > blinkstates[led].timeout) {
+    set_LED_state(led, LED_BLINK_ON);
+    blinkstates[led].timeout = currtime + blinkstates[led].ontime;
   }
   
   // Handle valve timers
@@ -325,17 +303,6 @@ void handle_timers()
       (currtime > timeouts[VODKA_TIMEOUT])) {
     stop_production(VODKA); 
   }
-
-  // Freeze timer
-  // FIXME: No freeze for now
-  // if ((system_state == STATE_FREEZE) &&
-  //     (currtime > timeouts[FREEZE_TIMEOUT])) {
-  //   set_state(STATE_OFF);
-  // }  
-  // if ((system_state == STATE_FREEZE) &&
-  //     (events & PAD_EVENT)) {
-  //   set_state(STATE_OFF);
-  // }
 }
 
 /*!
@@ -453,17 +420,6 @@ void handle_inputs()
       events &= ~RESET_BUTTON_DOWN;
     }
   }
-
-  // FIXME: Workaround for missing IR sensors, use same button for milk, 
-  // but don't activate booze while milk is running
-#ifndef USE_IR_SENSORS
-  if (events & DISPENSER_BUTTON_EVENT) {
-    events |= PROXIMITY_EVENT;
-  }
-  else {
-    events &= ~PROXIMITY_EVENT;
-  }
-#endif // USE_IR_SENSORS
 }
 
 void setup()

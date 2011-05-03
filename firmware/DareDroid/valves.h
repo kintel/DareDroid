@@ -9,6 +9,6 @@ bool init_valves();
 #define open_valves(mask) set_valves(mask, true)
 #define close_valves(mask) set_valves(mask, false)
 void set_valves(uint8_t mask, bool on);
-void flip_valves();
+bool get_valve(uint8_t mask);
 
 #endif

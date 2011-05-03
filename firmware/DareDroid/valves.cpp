@@ -14,17 +14,17 @@
 #include "config.h"
 #include <Wire.h>
 
-uint8_t __valve_status;
+uint8_t __valve_status = 0;
 
 #ifdef SIMULATOR
-#define VALVEPIN_1 8
-#define VALVEPIN_2 9
-#define VALVEPIN_3 10
-#define VALVEPIN_4 11
-#define VALVEPIN_5 12
-#define VALVEPIN_6 13
-#define VALVEPIN_7 16
-#define VALVEPIN_8 17
+#define VALVEPIN_1 3
+#define VALVEPIN_2 4
+#define VALVEPIN_3 8
+#define VALVEPIN_4 9
+#define VALVEPIN_5 10
+#define VALVEPIN_6 11
+#define VALVEPIN_7 12
+#define VALVEPIN_8 13
 
 void send_valve_status(uint8_t status)
 {
@@ -67,12 +67,11 @@ bool init_valves()
 void set_valves(uint8_t mask, bool on)
 {
   if (on) __valve_status |= mask;
-  else __valve_status &= ~(mask);
+  else __valve_status &= ~mask;
   send_valve_status(__valve_status);
 }
 
-void flip_valves()
+bool get_valve(uint8_t mask)
 {
-  __valve_status = ~(__valve_status);
-  send_valve_status(__valve_status);
+  return (__valve_status & mask) != 0;
 }
