@@ -90,10 +90,9 @@ unsigned long currtime;
 enum {
   JUICE_TIMEOUT = 0,
   VODKA_TIMEOUT = 1,
-  RED_LED_TIMEOUT = 4,
-  HEART_LED_TIMEOUT = 6
+  HEART_LED_TIMEOUT = 2
 };
-unsigned long timeouts[7] = {0,0,0,0,0,0,0};
+unsigned long timeouts[3] = {0,0,0};
 
 #define DISPENSER_BUTTON_ID 0
 #define RESET_BUTTON_ID 1
@@ -133,16 +132,13 @@ void set_LED_state(byte led, byte state)
 //     Serial.println(state, DEC);
 // #endif  
   }
-  // if (state == LED_BLINK_OFF || state == LED_BLINK_ON) {
-  //   switch (led) {
-  //   case RED_LED:
-  //     timeouts[RED_LED_TIMEOUT] = millis() + RED_LED_ON_TIME;
-  //     break;
-  //   case HEART_LED:
-  //     timeouts[HEART_LED_TIMEOUT] = millis() + HEART_LED_ON_TIME;
-  //     break;
-  //   }
-  // }
+  if (state == LED_BLINK_OFF || state == LED_BLINK_ON) {
+    switch (led) {
+    case HEART_LED:
+      timeouts[HEART_LED_TIMEOUT] = millis() + HEART_LED_ON_TIME;
+      break;
+    }
+  }
 }
 
 void activateLED(int led, bool on)
@@ -192,6 +188,17 @@ void activateLED(int led, bool on)
 */
 void handle_leds()
 {
+  switch (led_states[HEART_LED]) {
+  case LED_OFF:
+  case LED_BLINK_OFF:
+    activateLED(HEART_LED_VALVE, false);
+    break;
+  case LED_ON:
+  case LED_BLINK_ON:
+    activateLED(HEART_LED_VALVE, true);
+    break;
+  }
+
   switch (led_states[RED_LED]) {
   case LED_OFF:
   case LED_BLINK_OFF:
@@ -202,17 +209,6 @@ void handle_leds()
     activateLED(RED_LED_VALVE, true);
     break;
   }
-
-  // switch (led_states[HEART_LED]) {
-  // case LED_OFF:
-  // case LED_BLINK_OFF:
-  //   activateLED(HEART_LED_VALVE, false);
-  //   break;
-  // case LED_ON:
-  // case LED_BLINK_ON:
-  //   activateLED(HEART_LED_VALVE, true);
-  //   break;
-  // }
 }
 
 enum Substance {
