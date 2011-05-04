@@ -105,32 +105,33 @@ struct LEDState {
 
 enum LedIds {
   HEART_LED   = 0,
-  BLUE_LED_1  = 1,
-  BLUE_LED_2  = 2,
-  WHITE_LED_1 = 3,
-  WHITE_LED_2 = 4,
-  RED_LED     = 5
+  RED_LED     = 1,
+  BLUE_LED_1  = 2,
+  BLUE_LED_2  = 3,
+  WHITE_LED_1 = 4,
+  WHITE_LED_2 = 5
 };
 
 #define NUMLEDS 6
 LEDState ledstates[NUMLEDS] = {
   { LED_OFF, VALVE(4) }, // HEART_LED
+  { LED_OFF, VALVE(5) }, // RED_LED
   { LED_OFF, VALVE(3) }, // BLUE_LED_1
   { LED_OFF, VALVE(6) }, // BLUE_LED_2
   { LED_OFF, VALVE(2) }, // WHITE_LED_1
-  { LED_OFF, VALVE(7) }, // WHITE_LED_2
-  { LED_OFF, VALVE(5) }  // RED_LED
+  { LED_OFF, VALVE(7) }  // WHITE_LED_2
 };
 
-#define NUMBLINKERS 1
 struct BlinkState {
   unsigned long timeout;
   uint16_t ontime;
   uint16_t offtime;
 };
 
-BlinkState blinkstates[1] = {
-  {0, 100, 500} // HEART_LED
+#define NUMBLINKERS 2
+BlinkState blinkstates[NUMBLINKERS] = {
+  {0, 100, 500}, // HEART_LED
+  {0, 100, 900}  // RED_LED
 };
 
 byte current_proximity = 0;
@@ -281,16 +282,16 @@ void handle_timers()
 {
   currtime = millis();
 
-  byte led = HEART_LED;
-
   // Handle blinking LEDs
-  if (ledstates[led].state == LED_BLINK_ON && currtime > blinkstates[led].timeout) {
-    set_LED_state(led, LED_BLINK_OFF);
-    blinkstates[led].timeout = currtime + blinkstates[led].offtime;
-  }
-  else if (ledstates[led].state == LED_BLINK_OFF && currtime > blinkstates[led].timeout) {
-    set_LED_state(led, LED_BLINK_ON);
-    blinkstates[led].timeout = currtime + blinkstates[led].ontime;
+  for (byte i=0;i<NUMBLINKERS;i++) {
+    if (ledstates[i].state == LED_BLINK_ON && currtime > blinkstates[i].timeout) {
+      set_LED_state(i, LED_BLINK_OFF);
+      blinkstates[i].timeout = currtime + blinkstates[i].offtime;
+    }
+    else if (ledstates[i].state == LED_BLINK_OFF && currtime > blinkstates[i].timeout) {
+      set_LED_state(i, LED_BLINK_ON);
+      blinkstates[i].timeout = currtime + blinkstates[i].ontime;
+    }
   }
   
   // Handle valve timers
@@ -320,15 +321,14 @@ void set_state(byte newstate)
     close_valves(ALL_VALVES);
     production_state = 0;
     button_counters[DISPENSER_BUTTON_ID] = button_counters[RESET_BUTTON_ID] = 0;
+    set_LED_state(RED_LED, LED_BLINK_ON);
     break;
   case STATE_ACTIVE:
-    // set_LED_state(RED_LED, LED_BLINK_ON);
-    // set_LED_state(CUP_LED, LED_OFF);
+    set_LED_state(RED_LED, LED_OFF);
     break;
   case STATE_DARE:
     break;
   case STATE_FREEZE:
-    set_LED_state(RED_LED, LED_BLINK_OFF);
     break;
   }
   system_state = newstate;
@@ -342,30 +342,32 @@ void handle_inputs()
   read_all_sensors(); // Samples all analog inputs
 
 #ifdef USE_IR_SENSORS
-  // Find closest object
-  current_proximity = max(get_last_sensor_value(IR_SENSOR_1), 
-                          get_last_sensor_value(IR_SENSOR_2));
-  set_LED_state(BLUE_LED_1, (current_proximity > SENSOR_LEVEL_1) ? LED_ON : LED_OFF);
-  set_LED_state(BLUE_LED_2, (current_proximity > SENSOR_LEVEL_2) ? LED_ON : LED_OFF);
-  set_LED_state(WHITE_LED_1, (current_proximity > SENSOR_LEVEL_3) ? LED_ON : LED_OFF);
-  set_LED_state(WHITE_LED_2, (current_proximity > SENSOR_LEVEL_4) ? LED_ON : LED_OFF);
-  set_LED_state(RED_LED, (current_proximity > SENSOR_LEVEL_5) ? LED_ON : LED_OFF);
+  if (system_state != STATE_OFF) {
+    // Find closest object
+    current_proximity = max(get_last_sensor_value(IR_SENSOR_1), 
+                            get_last_sensor_value(IR_SENSOR_2));
+    set_LED_state(BLUE_LED_1, (current_proximity > SENSOR_LEVEL_1) ? LED_ON : LED_OFF);
+    set_LED_state(BLUE_LED_2, (current_proximity > SENSOR_LEVEL_2) ? LED_ON : LED_OFF);
+    set_LED_state(WHITE_LED_1, (current_proximity > SENSOR_LEVEL_3) ? LED_ON : LED_OFF);
+    set_LED_state(WHITE_LED_2, (current_proximity > SENSOR_LEVEL_4) ? LED_ON : LED_OFF);
+    set_LED_state(RED_LED, (current_proximity > SENSOR_LEVEL_5) ? LED_ON : LED_OFF);
 
-  // "Debounce" sensor reading
-  if (current_proximity > PROXIMITY_ALERT_THRESHOLD) {
-    if (button_counters[PROXIMITY_ALERT_ID] < PROXIMITY_MAX) {
-      button_counters[PROXIMITY_ALERT_ID]++;
+    // "Debounce" sensor reading
+    if (current_proximity > PROXIMITY_ALERT_THRESHOLD) {
+      if (button_counters[PROXIMITY_ALERT_ID] < PROXIMITY_MAX) {
+        button_counters[PROXIMITY_ALERT_ID]++;
+      }
+      if (button_counters[PROXIMITY_ALERT_ID] == PROXIMITY_MAX) {
+        events |= PROXIMITY_ALERT;
+      }
     }
-    if (button_counters[PROXIMITY_ALERT_ID] == PROXIMITY_MAX) {
-      events |= PROXIMITY_ALERT;
-    }
-  }
-  else {
-    if (button_counters[PROXIMITY_ALERT_ID] > 0) {
-      button_counters[PROXIMITY_ALERT_ID]--;
-    }
-    if (button_counters[PROXIMITY_ALERT_ID] == 0) {
-      events &= ~PROXIMITY_ALERT;
+    else {
+      if (button_counters[PROXIMITY_ALERT_ID] > 0) {
+        button_counters[PROXIMITY_ALERT_ID]--;
+      }
+      if (button_counters[PROXIMITY_ALERT_ID] == 0) {
+        events &= ~PROXIMITY_ALERT;
+      }
     }
   }
 #endif // USE_IR_SENSORS
@@ -479,7 +481,7 @@ void heartbeat()
   if (currtime > next_heartbeat) {
     if (IO_PORT & _BV(LS1)) {
       IO_PORT &= ~_BV(LS1);
-      next_heartbeat = currtime + 900;
+      next_heartbeat = currtime + 100;
     }
     else {
       IO_PORT |= _BV(LS1);
