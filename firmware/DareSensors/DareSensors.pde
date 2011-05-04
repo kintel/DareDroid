@@ -21,7 +21,7 @@
 
 #include <Wire.h>
 
-//#define USE_IR_SENSORS
+#define USE_IR_SENSORS
 
 // Valve & LED mapping
 #define MILK_VALVES   VALVE(0) | VALVE(1)
@@ -368,56 +368,22 @@ void setup()
   digitalWrite(LED1, LOW);
   digitalWrite(LED2, LOW);
 
+#ifndef ARDUINO  
   Wire.begin();
   delay(10);
+#endif
   
   bool sensors_ok = init_sensors();
 
-  // Briefly pulse LEDs to indicate sensor status
-  if (sensors_ok) IO_PORT |= (_BV(LS2));
-  else Serial.println("init_sensors() failed");
-  if (sensors_ok) {
-    delay(800);
-    IO_PORT &= ~(_BV(LS1) | _BV(LS2));
-  } else {
-    Serial.println("DareSensors init error");
-    // Loop while blinking LEDs on sensor error
-    for (;;) {
-      if (!sensors_ok) IO_PORT |= (_BV(LS2));
-      delay(500);
-      IO_PORT &= ~(_BV(LS1) | _BV(LS2));
-      delay(300);
-    }
-  }
-  //  Serial.println("DareSensors ready");
-}
-
-/*!
-  Call this to provide a heartbeat in the form of a blinking LED
-*/
-void heartbeat()
-{
-  static unsigned long next_heartbeat = 0;
-  unsigned long currtime = millis();
-  if (currtime > next_heartbeat) {
-    if (IO_PORT & _BV(LS1)) {
-      IO_PORT &= ~_BV(LS1);
-      next_heartbeat = currtime + 900;
-    }
-    else {
-      IO_PORT |= _BV(LS1);
-      next_heartbeat = currtime + 100;
-    }
-  }
 }
 
 void loop()
 {
   read_all_sensors(); // Samples all analog inputs
-  int s1 = get_last_sensor_value(0);
-  int s2 = get_last_sensor_value(1);
-  int s3 = get_last_sensor_value(2);
-  int s4 = get_last_sensor_value(3);
+  int s1 = get_last_sensor_value(4);
+  int s2 = get_last_sensor_value(5);
+  int s3 = get_last_sensor_value(0);
+  int s4 = get_last_sensor_value(1);
   Serial.print((s3 < 50)?"B":"-");
   Serial.print((s4 < 50)?"R":"-");
   Serial.print(" ");
