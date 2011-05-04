@@ -17,6 +17,8 @@
 
 int sensor_values[8];
 
+#ifndef ARDUINO
+
 // Returns true if OK, false if we cannot communicate with sensors
 bool init_sensors()
 {
@@ -77,5 +79,29 @@ int get_last_sensor_value(byte sensor)
 {
   return sensor_values[sensor & 0x07];
 }
+
+#else
+// ARDUINO
+
+bool init_sensors()
+{
+  return true;
+}
+
+int read_sensor(byte sensor)
+{
+  return analogRead(sensor) >> 2;
+}
+
+void read_all_sensors()
+{
+}
+
+int get_last_sensor_value(byte sensor)
+{
+  return read_sensor(sensor);
+}
+
+#endif
 
 #endif

@@ -4,7 +4,9 @@
 // Define this if we want debug output on serial
 #define DEBUG
 // Define this if we're running on an Arduino simulator board
-#define SIMULATOR
+//#define SIMULATOR
+// Define this if we're running on an Arduino application board
+#define ARDUINO
 // Define this if we're using the ADS7828 sensor
 //#define USE_ADS7828
 

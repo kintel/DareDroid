@@ -16,9 +16,10 @@
 
 uint8_t __valve_status = 0;
 
-#ifdef SIMULATOR
-#define VALVEPIN_1 3
-#define VALVEPIN_2 4
+#if defined(SIMULATOR) || defined(ARDUINO)
+
+#define VALVEPIN_1 2
+#define VALVEPIN_2 3
 #define VALVEPIN_3 8
 #define VALVEPIN_4 9
 #define VALVEPIN_5 10
@@ -49,7 +50,7 @@ void send_valve_status(uint8_t status)
 // Returns true if OK, false if we cannot communicate with valves
 bool init_valves()
 {
-#ifndef SIMULATOR
+#if !defined(SIMULATOR) && !defined(ARDUINO)
   Wire.beginTransmission(PCF8574_ADDR);
   return (Wire.endTransmission() == 0);
 #else

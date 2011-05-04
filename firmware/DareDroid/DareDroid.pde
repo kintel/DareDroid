@@ -34,9 +34,21 @@
 #define JUICE_VALVE       VALVE(0)
 #define VODKA_VALVE       VALVE(1)
 
+#ifdef ARDUINO
+#define DISPENSER_BUTTON_PIN 17
+#define RESET_BUTTON_PIN 16
+#define HEARTBEAT_LED 15 // Analog 1
+#endif
+
 // Sensor mapping
+#ifndef SIMULATOR
+#define IR_SENSOR_1             4
+#define IR_SENSOR_2             5
+#else
 #define IR_SENSOR_1             0
 #define IR_SENSOR_2             1
+#endif
+
 #define DISPENSER_BUTTON_SENSOR 2
 #define RESET_BUTTON_SENSOR     3
 
@@ -47,9 +59,6 @@
 // New accufuser timing
 // #define JUICE_TIME 6000
 // #define VODKA_TIME 6000
-
-#define RED_LED_ON_TIME  50
-#define RED_LED_OFF_TIME 50
 
 #define BUTTON_MAX 10
 #define PROXIMITY_MAX 500
@@ -104,12 +113,12 @@ struct LEDState {
 };
 
 enum LedIds {
-  HEART_LED   = 0,
-  RED_LED     = 1,
-  BLUE_LED_1  = 2,
-  BLUE_LED_2  = 3,
-  WHITE_LED_1 = 4,
-  WHITE_LED_2 = 5
+  HEART_LED    = 0,
+  RED_LED      = 1,
+  BLUE_LED_1   = 2,
+  BLUE_LED_2   = 3,
+  WHITE_LED_1  = 4,
+  WHITE_LED_2  = 5
 };
 
 #define NUMLEDS 6
@@ -318,6 +327,7 @@ void set_state(byte newstate)
   }
   switch (newstate) {
   case STATE_OFF:
+    for (int i=0;i<NUMLEDS;i++) set_LED_state(i, LED_OFF);
     close_valves(ALL_VALVES);
     production_state = 0;
     button_counters[DISPENSER_BUTTON_ID] = button_counters[RESET_BUTTON_ID] = 0;
@@ -333,6 +343,18 @@ void set_state(byte newstate)
   }
   system_state = newstate;
 }
+
+bool buttonPressed(byte button)
+{
+#ifdef ARDUINO
+  if (button == 0) return !digitalRead(DISPENSER_BUTTON_PIN);
+  else !digitalRead(RESET_BUTTON_PIN);
+#else
+  if (button == 0) return get_last_sensor_value(DISPENSER_BUTTON_SENSOR) < 50;
+  else return get_last_sensor_value(RESET_BUTTON_SENSOR) < 50;
+#endif
+}
+                 
 
 /*!
   Read all inputs, debounce and create events
@@ -376,7 +398,7 @@ void handle_inputs()
   // Debounce buttons events
 
   if (button_counters[DISPENSER_BUTTON_ID] == 0) events &= ~DISPENSER_BUTTON_CLICKED;
-  if (get_last_sensor_value(DISPENSER_BUTTON_SENSOR) < 50) {
+  if (buttonPressed(0)) {
     if (button_counters[DISPENSER_BUTTON_ID] < BUTTON_MAX) {
       button_counters[DISPENSER_BUTTON_ID]++;
     }
@@ -400,7 +422,7 @@ void handle_inputs()
   }
 
   if (button_counters[RESET_BUTTON_ID] == 0) events &= ~RESET_BUTTON_CLICKED;
-  if (get_last_sensor_value(RESET_BUTTON_SENSOR) < 50) {
+  if (buttonPressed(1)) {
     if (button_counters[RESET_BUTTON_ID] < BUTTON_MAX) {
       button_counters[RESET_BUTTON_ID]++;
     }
@@ -435,13 +457,21 @@ void setup()
   digitalWrite(LED1, LOW);
   digitalWrite(LED2, LOW);
 
+#ifndef ARDUINO
   Wire.begin();
   delay(10);
+#endif
   
   bool valves_ok = init_valves();
+  pinMode(HEARTBEAT_LED, OUTPUT);
   bool sensors_ok = init_sensors();
+  pinMode(RESET_BUTTON_PIN, INPUT);
+  digitalWrite(RESET_BUTTON_PIN, true); //pullup
+  pinMode(DISPENSER_BUTTON_PIN, INPUT);
+  digitalWrite(DISPENSER_BUTTON_PIN, true); //pullup
   close_valves(ALL_VALVES);
 
+#ifndef ARDUINO
   // Briefly pulse LEDs to indicate sensor status
   if (valves_ok) IO_PORT |= (_BV(LS1));
 #ifdef DEBUG
@@ -465,10 +495,20 @@ void setup()
       delay(300);
     }
   }
+#endif
   Serial.println("DareDroid ready");
 
   // System will be deactivated initially
   set_state(STATE_OFF);
+
+  //   activateLED(HEART_LED, true);
+  // activateLED(RED_LED, true);
+  //  activateLED(BLUE_LED_1, true);
+  // activateLED(BLUE_LED_2, true);
+  // activateLED(WHITE_LED_1, true);
+  //activateLED(WHITE_LED_2, true);
+  //  while (1) { }
+
 }
 
 /*!
@@ -476,6 +516,20 @@ void setup()
 */
 void heartbeat()
 {
+#ifdef ARDUINO
+  static unsigned long next_heartbeat = 0;
+  unsigned long currtime = millis();
+  if (currtime > next_heartbeat) {
+    if (digitalRead(HEARTBEAT_LED)) {
+      digitalWrite(HEARTBEAT_LED, false);
+      next_heartbeat = currtime + 900;
+    }
+    else {
+      digitalWrite(HEARTBEAT_LED, true);
+      next_heartbeat = currtime + 100;
+    }
+  }
+#else
   static unsigned long next_heartbeat = 0;
   unsigned long currtime = millis();
   if (currtime > next_heartbeat) {
@@ -488,6 +542,7 @@ void heartbeat()
       next_heartbeat = currtime + 100;
     }
   }
+#endif
 }
 
 void loop()
