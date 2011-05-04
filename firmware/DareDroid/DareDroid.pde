@@ -56,6 +56,7 @@
 // Roboexotica opening timing
 #define JUICE_TIME 15000
 #define VODKA_TIME 15000
+#define FREEZE_TIME 1000
 // New accufuser timing
 // #define JUICE_TIME 6000
 // #define VODKA_TIME 6000
@@ -91,8 +92,9 @@ unsigned long currtime;
 enum {
   JUICE_TIMEOUT = 0,
   VODKA_TIMEOUT = 1,
+  FREEZE_TIMEOUT = 2,
 };
-unsigned long timeouts[2] = {0,0};
+unsigned long timeouts[3] = {0,0,0};
 
 #define DISPENSER_BUTTON_ID 0
 #define RESET_BUTTON_ID 1
@@ -228,6 +230,28 @@ enum Substance {
   VODKA,
 };
 
+byte halted = 0;
+void halt_production()
+{
+  if (production_state & PRODUCING_JUICE) {
+    close_valves(JUICE_VALVE);
+    halted |= JUICE_VALVE;
+  }
+  if (production_state & PRODUCING_VODKA) {
+    close_valves(VODKA_VALVE);
+    halted |= VODKA_VALVE;
+  }
+}
+
+void resume_production()
+{
+  if (halted) {
+    open_valves(halted); 
+    set_LED_state(HEART_LED, LED_BLINK_OFF);
+    halted = 0;
+  }
+}
+
 /*!
   Start producing a substance -> turn on valves, start timers, update HEART LED
 */
@@ -304,14 +328,15 @@ void handle_timers()
   }
   
   // Handle valve timers
-
-  if ((production_state & PRODUCING_JUICE) &&
-      (currtime > timeouts[JUICE_TIMEOUT])) {
-    stop_production(JUICE); 
-  }
-  if ((production_state & PRODUCING_VODKA) &&
-      (currtime > timeouts[VODKA_TIMEOUT])) {
-    stop_production(VODKA); 
+  if (system_state != STATE_FREEZE) {
+    if ((production_state & PRODUCING_JUICE) &&
+        (currtime > timeouts[JUICE_TIMEOUT])) {
+      stop_production(JUICE); 
+    }
+    if ((production_state & PRODUCING_VODKA) &&
+        (currtime > timeouts[VODKA_TIMEOUT])) {
+      stop_production(VODKA); 
+    }
   }
 }
 
@@ -337,8 +362,12 @@ void set_state(byte newstate)
     set_LED_state(RED_LED, LED_OFF);
     break;
   case STATE_DARE:
+    set_LED_state(RED_LED, LED_OFF);
     break;
   case STATE_FREEZE:
+    for (int i=0;i<NUMLEDS;i++) set_LED_state(i, LED_OFF);
+    set_LED_state(RED_LED, LED_ON);
+    halt_production();
     break;
   }
   system_state = newstate;
@@ -354,7 +383,7 @@ bool buttonPressed(byte button)
   else return get_last_sensor_value(RESET_BUTTON_SENSOR) < 50;
 #endif
 }
-                 
+
 
 /*!
   Read all inputs, debounce and create events
@@ -368,11 +397,13 @@ void handle_inputs()
     // Find closest object
     current_proximity = max(get_last_sensor_value(IR_SENSOR_1), 
                             get_last_sensor_value(IR_SENSOR_2));
-    set_LED_state(BLUE_LED_1, (current_proximity > SENSOR_LEVEL_1) ? LED_ON : LED_OFF);
-    set_LED_state(BLUE_LED_2, (current_proximity > SENSOR_LEVEL_2) ? LED_ON : LED_OFF);
-    set_LED_state(WHITE_LED_1, (current_proximity > SENSOR_LEVEL_3) ? LED_ON : LED_OFF);
-    set_LED_state(WHITE_LED_2, (current_proximity > SENSOR_LEVEL_4) ? LED_ON : LED_OFF);
-    set_LED_state(RED_LED, (current_proximity > SENSOR_LEVEL_5) ? LED_ON : LED_OFF);
+    if (system_state != STATE_FREEZE) {
+      set_LED_state(BLUE_LED_1, (current_proximity > SENSOR_LEVEL_1) ? LED_ON : LED_OFF);
+      set_LED_state(BLUE_LED_2, (current_proximity > SENSOR_LEVEL_2) ? LED_ON : LED_OFF);
+      set_LED_state(WHITE_LED_1, (current_proximity > SENSOR_LEVEL_3) ? LED_ON : LED_OFF);
+      set_LED_state(WHITE_LED_2, (current_proximity > SENSOR_LEVEL_4) ? LED_ON : LED_OFF);
+      set_LED_state(RED_LED, (current_proximity > SENSOR_LEVEL_5) ? LED_ON : LED_OFF);
+    }
 
     // "Debounce" sensor reading
     if (current_proximity > PROXIMITY_ALERT_THRESHOLD) {
@@ -393,7 +424,6 @@ void handle_inputs()
     }
   }
 #endif // USE_IR_SENSORS
-
 
   // Debounce buttons events
 
@@ -558,19 +588,31 @@ void loop()
   //
 
   // Proximity alert overrides everything
-  if ((events & PROXIMITY_ALERT) && (system_state != STATE_FREEZE)) {
-    previous_state = system_state;
-    set_state(STATE_FREEZE);
-  }
-  else if (system_state == STATE_FREEZE) {
-    set_state(previous_state);
+  if (events & PROXIMITY_ALERT) {
+    timeouts[FREEZE_TIMEOUT] = millis() + FREEZE_TIME;
+
+    if (system_state != STATE_FREEZE) {
+      previous_state = system_state;
+      set_state(STATE_FREEZE);
+    }
   }
   else {
-    if (events & RESET_BUTTON_CLICKED) {
-      if (system_state == STATE_OFF) set_state(STATE_ACTIVE);
-      else set_state(STATE_OFF);
+    if (system_state == STATE_FREEZE) {
+      currtime = millis();
+      // Freeze timer
+      if (currtime > timeouts[FREEZE_TIMEOUT]) {
+        set_state(previous_state);
+        resume_production();
+      }
     }
+  }
 
+  if (events & RESET_BUTTON_CLICKED) {
+    if (system_state == STATE_OFF) set_state(STATE_ACTIVE);
+    else set_state(STATE_OFF);
+  }
+
+  if (system_state != STATE_FREEZE) {
     // If all has been produced, set back state to ACTIVE
     if ((production_state & (PRODUCED_JUICE | PRODUCED_VODKA)) ==
         (PRODUCED_JUICE | PRODUCED_VODKA)) {
