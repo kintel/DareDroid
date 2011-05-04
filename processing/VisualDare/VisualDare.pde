@@ -31,7 +31,6 @@ void setup () {
   myPort.bufferUntil('\n');
 
   fontA = loadFont("SansSerif-24.vlw");
-  textAlign(CENTER);
   textFont(fontA, 24);
 
   clear();
@@ -61,6 +60,11 @@ void serialEvent (Serial myPort) {
   if (param == 0) fill(0);
   stroke(0,0,0,255);
   if (tokens[0].equals("State")) {
+    textAlign(LEFT);
+    if (param == 0) fill(255); else fill(0); text("OFF", 10, 30);
+    if (param == 1) fill(255); else fill(0); text("ACTIVE", 10, 50);
+    if (param == 2) fill(255); else fill(0); text("DARE", 10, 70);
+    if (param == 3) fill(255); else fill(0); text("FREEZE", 10, 90);
   }
   else if (tokens[0].equals("Button")) {
   }
@@ -71,10 +75,12 @@ void serialEvent (Serial myPort) {
       fill(255);
       stroke(255);
     }
+    textAlign(CENTER);
     text("Juice", 200, 200);
   }
   else if (tokens[0].equals("VODKA")) {
     if (param == 1) fill(255);
+    textAlign(CENTER);
     text("Vodka", 200, 220);
   }
   else if (tokens[0].equals("HEART_LED")) {
