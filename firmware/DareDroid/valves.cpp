@@ -61,6 +61,7 @@ bool init_valves()
   pinMode(VALVEPIN_5, OUTPUT);
   pinMode(VALVEPIN_6, OUTPUT);
   pinMode(VALVEPIN_7, OUTPUT);
+  pinMode(VALVEPIN_8, OUTPUT);
   return true;
 #endif
 }

@@ -54,8 +54,8 @@
 
 // Timers in milliseconds
 // Roboexotica opening timing
-#define JUICE_TIME 15000
-#define VODKA_TIME 15000
+#define JUICE_TIME 11000
+#define VODKA_TIME 11000
 #define FREEZE_TIME 1000
 // New accufuser timing
 // #define JUICE_TIME 6000
@@ -65,10 +65,10 @@
 #define PROXIMITY_MAX 500
 
 enum SystemState {
-  STATE_OFF,
-  STATE_ACTIVE,
-  STATE_DARE,
-  STATE_FREEZE
+  STATE_OFF, // 0
+  STATE_ACTIVE, // 1
+  STATE_DARE, // 2
+  STATE_FREEZE // 3
 };
 byte system_state = STATE_OFF;
 byte previous_state = STATE_OFF;
@@ -331,11 +331,11 @@ void handle_timers()
   if (system_state != STATE_FREEZE) {
     if ((production_state & PRODUCING_JUICE) &&
         (currtime > timeouts[JUICE_TIMEOUT])) {
-      stop_production(JUICE); 
+      stop_production(JUICE);
     }
     if ((production_state & PRODUCING_VODKA) &&
         (currtime > timeouts[VODKA_TIMEOUT])) {
-      stop_production(VODKA); 
+      stop_production(VODKA);
     }
   }
 }
@@ -538,7 +538,6 @@ void setup()
   // activateLED(WHITE_LED_1, true);
   //activateLED(WHITE_LED_2, true);
   //  while (1) { }
-
 }
 
 /*!
@@ -616,14 +615,18 @@ void loop()
     // If all has been produced, set back state to ACTIVE
     if ((production_state & (PRODUCED_JUICE | PRODUCED_VODKA)) ==
         (PRODUCED_JUICE | PRODUCED_VODKA)) {
+#ifdef DEBUG
+      Serial.println("Drink produced");
+#endif
       set_state(STATE_ACTIVE);
       drinks_produced++;
+      production_state = 0;
     }
     if (system_state == STATE_ACTIVE && (events & DISPENSER_BUTTON_CLICKED)) {
       set_state(STATE_DARE);
       start_production(JUICE);
     }
-    if (system_state == STATE_DARE && (events & DISPENSER_BUTTON_CLICKED)) {
+    else if (system_state == STATE_DARE && (events & DISPENSER_BUTTON_CLICKED)) {
       // Produce vodka if not already done
       if (production_state & PRODUCED_JUICE) {
         if (!(production_state & (PRODUCING_VODKA | PRODUCED_VODKA))) {
