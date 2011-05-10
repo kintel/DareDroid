@@ -1,13 +1,11 @@
 // Graphing sketch
  
- 
 // This program takes ASCII-encoded strings
 // from the serial port at 9600 baud and graphs them. It expects values in the
 // range 0 to 1023, followed by a newline, or newline and carriage return
  
-// Created 20 Apr 2005
-// Updated 18 Jan 2008
-// by Tom Igoe
+// Created 20 Apr 2005 & Updated 18 Jan 2008 by Tom Igoe
+// Modified May 2011 by Marius Kintel
 // This example code is in the public domain.
  
 import processing.serial.*;
