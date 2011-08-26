@@ -65,10 +65,10 @@
 #define PROXIMITY_MAX 500
 
 enum SystemState {
-  STATE_OFF, // 0
+  STATE_OFF,    // 0
   STATE_ACTIVE, // 1
-  STATE_DARE, // 2
-  STATE_FREEZE // 3
+  STATE_DARE,   // 2
+  STATE_FREEZE  // 3
 };
 byte system_state = STATE_OFF;
 byte previous_state = STATE_OFF;
@@ -175,7 +175,9 @@ void activateLED(int led, bool on)
 {
   byte valve = ledstates[led].valve;
 #ifdef DEBUG
-  if (get_valve(valve) != on) {
+  // Only print LED debug when proximity sensors are not active to avoid too much
+  // debug output.
+  if (system_state != STATE_ACTIVE && system_state != STATE_DARE && get_valve(valve) != on) {
     switch (led) {
     case HEART_LED:
       Serial.print("HEART_LED ");
@@ -354,6 +356,7 @@ void set_state(byte newstate)
   case STATE_OFF:
     for (int i=0;i<NUMLEDS;i++) set_LED_state(i, LED_OFF);
     close_valves(ALL_VALVES);
+    events &= ~PROXIMITY_ALERT;
     production_state = 0;
     button_counters[DISPENSER_BUTTON_ID] = button_counters[RESET_BUTTON_ID] = 0;
     set_LED_state(RED_LED, LED_BLINK_ON);
@@ -404,6 +407,13 @@ void handle_inputs()
       set_LED_state(WHITE_LED_2, (current_proximity > SENSOR_LEVEL_4) ? LED_ON : LED_OFF);
       set_LED_state(RED_LED, (current_proximity > SENSOR_LEVEL_5) ? LED_ON : LED_OFF);
     }
+#ifdef DEBUG
+    Serial.print((current_proximity > SENSOR_LEVEL_1) ? "=" : "");
+    Serial.print((current_proximity > SENSOR_LEVEL_2) ? "=" : "");
+    Serial.print((current_proximity > SENSOR_LEVEL_3) ? "=" : "");
+    Serial.print((current_proximity > SENSOR_LEVEL_4) ? "=" : "");
+    Serial.println((current_proximity > SENSOR_LEVEL_5) ? "X" : "");
+#endif
 
     // "Debounce" sensor reading
     if (current_proximity > PROXIMITY_ALERT_THRESHOLD) {
@@ -531,13 +541,14 @@ void setup()
   // System will be deactivated initially
   set_state(STATE_OFF);
 
-  //   activateLED(HEART_LED, true);
+  // For testing:
+  // activateLED(HEART_LED, true);
   // activateLED(RED_LED, true);
-  //  activateLED(BLUE_LED_1, true);
+  // activateLED(BLUE_LED_1, true);
   // activateLED(BLUE_LED_2, true);
   // activateLED(WHITE_LED_1, true);
-  //activateLED(WHITE_LED_2, true);
-  //  while (1) { }
+  // activateLED(WHITE_LED_2, true);
+  // while (1) { }
 }
 
 /*!
