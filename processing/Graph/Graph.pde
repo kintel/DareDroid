@@ -82,6 +82,7 @@ void drawLEDs() {
 void serialEvent (Serial myPort) {
   // get the ASCII string:
   String inString = myPort.readStringUntil('\n');
+  if (inString == null || inString.length() < 3) return;
 
   Boolean button = (inString.charAt(0) == 'B');
   Boolean reset = (inString.charAt(1) == 'R');
