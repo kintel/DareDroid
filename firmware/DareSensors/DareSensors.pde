@@ -382,10 +382,11 @@ void loop()
   read_all_sensors(); // Samples all analog inputs
   int s1 = get_last_sensor_value(4);
   int s2 = get_last_sensor_value(5);
-  int s3 = get_last_sensor_value(0);
-  int s4 = get_last_sensor_value(1);
-  Serial.print((s3 < 50)?"B":"-");
-  Serial.print((s4 < 50)?"R":"-");
+  // int s3 = get_last_sensor_value(0);
+  // int s4 = get_last_sensor_value(1);
+  // Serial.print((s3 < 50)?"B":"-");
+  // Serial.print((s4 < 50)?"R":"-");
+  Serial.print("--");
   Serial.print(" ");
   Serial.print(s1, DEC);
   Serial.print(" ");
